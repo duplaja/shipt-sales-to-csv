@@ -16,23 +16,22 @@ TWOPLACES = Decimal(10) ** -1
 
 chrome_options = Options()  
 chrome_options.add_argument("--headless")  
-
 driver = webdriver.Chrome(chrome_options=chrome_options)
 #driver = webdriver.Chrome()
-#Opens Page
-driver.get("https://shop.shipt.com/login")
 
-#Explicitly wait for the element to become present (max 30 seconds)
+driver.get("https://shop.shipt.com/login") #Opens Login Page
+
+#Explicitly wait for the login element to become present (max 30 seconds)
 wait = WebDriverWait(driver, 30).until(EC.presence_of_element_located((By.ID, "login-email")))
 
-#Fills out form and submits it
+#Fills out login form and submits it
 driver.find_element_by_id("login-email").send_keys("my_email")
 driver.find_element_by_id ("login-password").send_keys("my_password")
 driver.find_element_by_css_selector("button[data-test='LoginForm-log-in-button']").click()
 
 time.sleep(4) #Pauses 4 seconds to be sure its finished
 
-#Meats On Sale URLs
+#Dictionaries of categories / links to grab
 meats =	{
   "beef": "https://shop.shipt.com/search?categories=Meat%20%26%20Seafood%20%3E%20Beef&on_sale=true",
   "pork": "https://shop.shipt.com/search?categories=Meat%20%26%20Seafood%20%3E%20Poultry%20%3E%20Chicken&on_sale=true",
@@ -57,162 +56,63 @@ cans = {
   "canned_fruit": "https://shop.shipt.com/search?categories=Pantry%20%3E%20Canned%20Goods%20%3E%20Canned%20Fruit%20%26%20Applesauce&on_sale=true"
 }
 
-with open('meat.csv', 'w') as csvfile:
-  filewriter = csv.writer(csvfile, delimiter=',',quotechar='|', quoting=csv.QUOTE_MINIMAL)
-  filewriter.writerow(['Category', 'Name','Sale Price','Full Price','Savings','Image'])
+#List of all categories
+savings_categories = { "meats": meats, "produce": produce, "cans":cans}
 
-with open('produce.csv', 'w') as csvfile:
-  filewriter = csv.writer(csvfile, delimiter=',',quotechar='|', quoting=csv.QUOTE_MINIMAL)
-  filewriter.writerow(['Category', 'Name','Sale Price','Full Price','Savings','Image'])
+for cat_name, big_cat in savings_categories.items():
 
-with open('canned.csv', 'w') as csvfile:
-  filewriter = csv.writer(csvfile, delimiter=',',quotechar='|', quoting=csv.QUOTE_MINIMAL)
-  filewriter.writerow(['Category', 'Name','Sale Price','Full Price','Savings','Image'])
+  #Opens the 3 CSV files and preps them with header rows
+  with open(cat_name+'.csv', 'w') as csvfile:
+    filewriter = csv.writer(csvfile, delimiter=',',quotechar='|', quoting=csv.QUOTE_MINIMAL)
+    filewriter.writerow(['Category', 'Name','Sale Price','Full Price','Savings','Image'])
 
+  #Handles each of the categories, one by one
+  for cat, site in big_cat.items():
+    print(cat)
+    driver.get(site) #Loads category site
+    time.sleep(4) #Pauses 4 seconds to be sure its finished loading
 
-for cat, site in meats.items():
+    done = 0
+    while done < 1:
+      #Sees if there is more to load
+      if driver.find_elements_by_css_selector("button[data-test='show-more-button']"):
 
-  print(cat)
-
-  driver.get(site) #Loads category site
-
-  time.sleep(4) #Pauses 4 seconds to be sure its finished loading
-
-  done = 0
-
-  while done < 1:
-    #Sees if there is more to load
-    if driver.find_elements_by_css_selector("button[data-test='show-more-button']"):
-
-      show_more = driver.find_element_by_css_selector("button[data-test='show-more-button']")
+        show_more = driver.find_element_by_css_selector("button[data-test='show-more-button']")
       
-      #Has to scroll since it's off page
-      action=ActionChains(driver)
-      action.move_to_element(show_more)        
-      action.click().perform()
+        #Has to scroll since it's off page
+        action=ActionChains(driver)
+        action.move_to_element(show_more)        
+        action.click().perform()
 
-      time.sleep(4) 
-    #stops when not found
-    else:
-      break
+        time.sleep(4) 
+      #stops when not found
+      else:
+        break
   
-  page_source = driver.page_source #Gets page source
+    page_source = driver.page_source #Gets page source
 
-  #passes source to Beautiful Soup and parses
-  content = BeautifulSoup(page_source, 'html.parser')
+    #passes source to Beautiful Soup and parses
+    content = BeautifulSoup(page_source, 'html.parser')
 
-  products = content.select("div[data-test='SearchProduct-product-content']")
+    #Gets all product information divs
+    products = content.select("div[data-test='SearchProduct-product-content']")
 
-  for a in range(len(products)):
+    #Loops through and breaks down products
+    for a in range(len(products)):
 
-    product = products[a]
-    name = product.select("div.body-3.mb1.black.break-word")[0].get_text()
-    sale_price = product.find("span", class_="callout-2").get_text()
-    full_price = product.select('span.caption-1.strike')[0].get_text()
-    product_img = product.select('img.db.center')[0]['src'].replace('thumb_', '')
-    portion = product.select('div.caption-1.h1.mb1.gray')[0].get_text().replace(';', ':')
-    diff = Decimal((1 - (Decimal(sub(r'[^\d.]', '', sale_price)) / Decimal(sub(r'[^\d.]', '', full_price))))*100).quantize(TWOPLACES)
-    
-    with open('meat.csv', 'a') as csvfile:
-      filewriter = csv.writer(csvfile, delimiter=',',quotechar='|', quoting=csv.QUOTE_MINIMAL)
-      filewriter.writerow([cat, name+' ('+portion+')',sale_price,full_price,str(diff)+'%',product_img])
+      product = products[a]
+      name = product.select("div.body-3.mb1.black.break-word")[0].get_text()
+      sale_price = product.find("span", class_="callout-2").get_text()
+      full_price = product.select('span.caption-1.strike')[0].get_text()
+      product_img = product.select('img.db.center')[0]['src'].replace('thumb_', '')
+      portion = product.select('div.caption-1.h1.mb1.gray')[0].get_text().replace(';', ':')
+      #Diff returns the % saved
+      diff = Decimal((1 - (Decimal(sub(r'[^\d.]', '', sale_price)) / Decimal(sub(r'[^\d.]', '', full_price))))*100).quantize(TWOPLACES)
 
-for cat, site in produce.items():
-
-  print(cat)
-
-  driver.get(site) #Loads category site
-
-  time.sleep(4) #Pauses 4 seconds to be sure its finished loading
-
-  done = 0
-
-  while done < 1:
-    #Sees if there is more to load
-    if driver.find_elements_by_css_selector("button[data-test='show-more-button']"):
-
-      show_more = driver.find_element_by_css_selector("button[data-test='show-more-button']")
-      
-      #Has to scroll since it's off page
-      action=ActionChains(driver)
-      action.move_to_element(show_more)        
-      action.click().perform()
-
-      time.sleep(4) 
-    #stops when not found
-    else:
-      break
-  
-  page_source = driver.page_source #Gets page source
-
-  #passes source to Beautiful Soup and parses
-  content = BeautifulSoup(page_source, 'html.parser')
-
-  products = content.select("div[data-test='SearchProduct-product-content']")
-
-  for a in range(len(products)):
-
-    product = products[a]
-    name = product.select("div.body-3.mb1.black.break-word")[0].get_text()
-    sale_price = product.find("span", class_="callout-2").get_text()
-    full_price = product.select('span.caption-1.strike')[0].get_text()
-    product_img = product.select('img.db.center')[0]['src'].replace('thumb_', '')
-    portion = product.select('div.caption-1.h1.mb1.gray')[0].get_text().replace(';', ':')
-    diff = Decimal((1 - (Decimal(sub(r'[^\d.]', '', sale_price)) / Decimal(sub(r'[^\d.]', '', full_price))))*100).quantize(TWOPLACES)
-    
-    with open('produce.csv', 'a') as csvfile:
-      filewriter = csv.writer(csvfile, delimiter=',',quotechar='|', quoting=csv.QUOTE_MINIMAL)
-      filewriter.writerow([cat, name+' ('+portion+')',sale_price,full_price,str(diff)+'%',product_img])
-
-
-for cat, site in cans.items():
-
-  print(cat)
-
-  driver.get(site) #Loads category site
-
-  time.sleep(4) #Pauses 4 seconds to be sure its finished loading
-
-  done = 0
-
-  while done < 1:
-    #Sees if there is more to load
-    if driver.find_elements_by_css_selector("button[data-test='show-more-button']"):
-
-      show_more = driver.find_element_by_css_selector("button[data-test='show-more-button']")
-      
-      #Has to scroll since it's off page
-      action=ActionChains(driver)
-      action.move_to_element(show_more)        
-      action.click().perform()
-
-      time.sleep(4) 
-    #stops when not found
-    else:
-      break
-  
-  page_source = driver.page_source #Gets page source
-
-  #passes source to Beautiful Soup and parses
-  content = BeautifulSoup(page_source, 'html.parser')
-
-  products = content.select("div[data-test='SearchProduct-product-content']")
-
-  for a in range(len(products)):
-
-    product = products[a]
-    name = product.select("div.body-3.mb1.black.break-word")[0].get_text()
-    sale_price = product.find("span", class_="callout-2").get_text()
-    full_price = product.select('span.caption-1.strike')[0].get_text()
-    product_img = product.select('img.db.center')[0]['src'].replace('thumb_', '')
-    portion = product.select('div.caption-1.h1.mb1.gray')[0].get_text().replace(';', ':')
-    diff = Decimal((1 - (Decimal(sub(r'[^\d.]', '', sale_price)) / Decimal(sub(r'[^\d.]', '', full_price))))*100).quantize(TWOPLACES)
-    
-    with open('cans.csv', 'a') as csvfile:
-      filewriter = csv.writer(csvfile, delimiter=',',quotechar='|', quoting=csv.QUOTE_MINIMAL)
-      filewriter.writerow([cat, name+' ('+portion+')',sale_price,full_price,str(diff)+'%',product_img])
-
-
+      #Writes current product to the correct CSV
+      with open(cat_name+'.csv', 'a') as csvfile:
+        filewriter = csv.writer(csvfile, delimiter=',',quotechar='|', quoting=csv.QUOTE_MINIMAL)
+        filewriter.writerow([cat, name+' ('+portion+')',sale_price,full_price,str(diff)+'%',product_img])
 
 print('Done')
 time.sleep(2) #Pauses 2 seconds to be sure its finished
